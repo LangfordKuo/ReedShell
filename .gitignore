@@ -1,1 +1,29 @@
+# Local agent configuration (machine specific)
 .zcode/
+
+# Rust
+/target/
+**/*.rs.bk
+**/*.pdb
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Node / Web
+node_modules/
+web/dist/
+.pnpm-store/
+
+# Local data
+*.db
+*.db-wal
+*.db-shm
+/tmp/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

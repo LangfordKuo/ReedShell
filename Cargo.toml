@@ -1,0 +1,47 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/reedshell-core",
+    "crates/reedshell-crypto",
+    "crates/reedshell-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/LangfordKuo/ReedShell"
+
+[workspace.dependencies]
+reedshell-core = { path = "crates/reedshell-core" }
+reedshell-crypto = { path = "crates/reedshell-crypto" }
+
+anyhow = "1"
+argon2 = "0.5"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["json"] }
+base64 = "0.22"
+chacha20poly1305 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8"] }
+getrandom = "0.3"
+hkdf = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+thiserror = "2"
+time = { version = "0.3", features = ["serde", "formatting", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "limit", "cors", "timeout"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+ulid = { version = "1", features = ["serde"] }
+zeroize = { version = "1", features = ["derive"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
