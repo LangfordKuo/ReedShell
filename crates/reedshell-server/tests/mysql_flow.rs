@@ -8,8 +8,10 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signer, SigningKey};
 use reedshell_server::{
-    AppState, Config, Environment, repo::mysql::MySqlUserRepository, routes,
-    security::token::TokenSigner,
+    AppState, Config, Environment,
+    repo::mysql::MySqlUserRepository,
+    routes,
+    security::{rate_limit::MemoryRateLimiter, token::TokenSigner},
 };
 use serde_json::{Value, json};
 use sqlx::mysql::MySqlPoolOptions;
@@ -36,12 +38,14 @@ async fn mysql_app() -> Option<(Router, sqlx::MySqlPool)> {
     });
     let users = Arc::new(MySqlUserRepository::new(pool.clone()));
     let tokens = Arc::new(TokenSigner::from_seed([9u8; 32]));
+    let limiter = Arc::new(MemoryRateLimiter::new());
 
     Some((
         routes::router(AppState {
             config,
             users,
             tokens,
+            limiter,
         }),
         pool,
     ))

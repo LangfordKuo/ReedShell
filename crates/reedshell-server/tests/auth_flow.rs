@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     Router,
     body::Body,
-    http::{Request, StatusCode},
+    http::{Method, Request, StatusCode},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signer, SigningKey};
@@ -12,7 +12,7 @@ use reedshell_server::{
     config::{Config, Environment},
     repo::memory::MemoryUserRepository,
     routes,
-    security::token::TokenSigner,
+    security::{rate_limit::MemoryRateLimiter, token::TokenSigner},
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -29,11 +29,13 @@ fn test_app() -> Router {
     });
     let users = Arc::new(MemoryUserRepository::new());
     let tokens = Arc::new(TokenSigner::from_seed([7u8; 32]));
+    let limiter = Arc::new(MemoryRateLimiter::new());
 
     routes::router(AppState {
         config,
         users,
         tokens,
+        limiter,
     })
 }
 
@@ -135,6 +137,49 @@ async fn post_with_bearer(app: &Router, uri: &str, token: &str) -> (StatusCode, 
         .body(Body::empty())
         .expect("build request");
     send(app, request).await
+}
+
+async fn request_with_bearer(
+    app: &Router,
+    method: Method,
+    uri: &str,
+    token: &str,
+    body: Option<&Value>,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("authorization", format!("Bearer {token}"));
+
+    let request = if let Some(body) = body {
+        builder = builder.header("content-type", "application/json");
+        builder
+            .body(Body::from(body.to_string()))
+            .expect("build request")
+    } else {
+        builder.body(Body::empty()).expect("build request")
+    };
+    send(app, request).await
+}
+
+async fn register_and_login(
+    app: &Router,
+    email: &str,
+    device_name: &str,
+    seed: u8,
+) -> (SigningKey, Value) {
+    let (status, _) = post(app, "/v1/auth/register", &register_body(email)).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let signing = SigningKey::from_bytes(&[seed; 32]);
+    let (status, body) = post(
+        app,
+        "/v1/auth/login",
+        &login_body_with_key(email, 1, device_name, &device_public_key(&signing)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    (signing, body)
 }
 
 #[tokio::test]
@@ -365,6 +410,134 @@ async fn refresh_rejects_signature_from_another_device() {
     let (status, error) = post(&app, "/v1/auth/refresh", &body).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(error["code"], "invalid_device_signature");
+}
+
+#[tokio::test]
+async fn register_rate_limits_repeated_attempts() {
+    let app = test_app();
+    let email = "rate@example.com";
+
+    let (status, _) = post(&app, "/v1/auth/register", &register_body(email)).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    for _ in 0..2 {
+        let (status, _) = post(&app, "/v1/auth/register", &register_body(email)).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    let (status, body) = post(&app, "/v1/auth/register", &register_body(email)).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["code"], "rate_limited");
+}
+
+#[tokio::test]
+async fn devices_can_be_listed_renamed_and_revoked() {
+    let app = test_app();
+    let (signing, login) = register_and_login(&app, "devices@example.com", "original", 51).await;
+
+    let access_token = login["access_token"]
+        .as_str()
+        .expect("access token")
+        .to_owned();
+    let device_id = login["device_id"].as_str().expect("device id").to_owned();
+    let refresh_token = login["refresh_token"]
+        .as_str()
+        .expect("refresh token")
+        .to_owned();
+
+    let (status, body) =
+        request_with_bearer(&app, Method::GET, "/v1/devices", &access_token, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["devices"].as_array().expect("devices").len(), 1);
+    assert_eq!(body["devices"][0]["id"], device_id);
+    assert_eq!(body["devices"][0]["current"], true);
+
+    let (status, body) = request_with_bearer(
+        &app,
+        Method::PATCH,
+        &format!("/v1/devices/{device_id}"),
+        &access_token,
+        Some(&json!({ "name": "renamed" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["name"], "renamed");
+
+    let (status, _) = request_with_bearer(
+        &app,
+        Method::DELETE,
+        &format!("/v1/devices/{device_id}"),
+        &access_token,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // A revoked device's access token stops working immediately.
+    let (status, body) =
+        request_with_bearer(&app, Method::GET, "/v1/devices", &access_token, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["code"], "device_revoked");
+
+    // The revoked device no longer counts against the Free plan limit.
+    let replacement = SigningKey::from_bytes(&[52u8; 32]);
+    let (status, second_login) = post(
+        &app,
+        "/v1/auth/login",
+        &login_body_with_key(
+            "devices@example.com",
+            1,
+            "replacement",
+            &device_public_key(&replacement),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let second_access = second_login["access_token"]
+        .as_str()
+        .expect("access token")
+        .to_owned();
+
+    let (status, body) =
+        request_with_bearer(&app, Method::GET, "/v1/devices", &second_access, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let devices = body["devices"].as_array().expect("devices");
+    assert_eq!(devices.len(), 2);
+    let revoked = devices
+        .iter()
+        .find(|device| device["id"] == device_id)
+        .expect("revoked device");
+    assert!(revoked["revoked_at"].is_number());
+
+    let timestamp = OffsetDateTime::now_utc().unix_timestamp();
+    let signature = refresh_signature(&signing, &device_id, timestamp);
+    let body = refresh_body(&device_id, &refresh_token, &signature, timestamp);
+    let (status, _) = post(&app, "/v1/auth/refresh", &body).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn cannot_rename_another_users_device() {
+    let app = test_app();
+    let (_owner_signing, owner) = register_and_login(&app, "owner@example.com", "owner", 61).await;
+    let owner_device = owner["device_id"].as_str().expect("device id").to_owned();
+
+    let (_other_signing, other) = register_and_login(&app, "other@example.com", "other", 62).await;
+    let other_access = other["access_token"]
+        .as_str()
+        .expect("access token")
+        .to_owned();
+
+    let (status, body) = request_with_bearer(
+        &app,
+        Method::PATCH,
+        &format!("/v1/devices/{owner_device}"),
+        &other_access,
+        Some(&json!({ "name": "hijacked" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "device_not_found");
 }
 
 #[tokio::test]

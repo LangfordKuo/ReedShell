@@ -100,6 +100,19 @@ pub trait UserRepository: Send + Sync {
     async fn find_user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, RepoError>;
     async fn create_device(&self, device: NewDevice) -> Result<DeviceRecord, RepoError>;
     async fn find_device(&self, id: DeviceId) -> Result<Option<DeviceRecord>, RepoError>;
+    async fn list_devices(&self, user_id: UserId) -> Result<Vec<DeviceRecord>, RepoError>;
+    async fn rename_device(
+        &self,
+        user_id: UserId,
+        device_id: DeviceId,
+        name: &str,
+    ) -> Result<DeviceRecord, RepoError>;
+    async fn revoke_device(
+        &self,
+        user_id: UserId,
+        device_id: DeviceId,
+        revoked_at: i64,
+    ) -> Result<(), RepoError>;
     async fn count_active_devices(&self, user_id: UserId) -> Result<u32, RepoError>;
     async fn store_refresh_token(&self, token: RefreshTokenRecord) -> Result<(), RepoError>;
     async fn find_refresh_token(

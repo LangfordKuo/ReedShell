@@ -99,6 +99,54 @@ impl UserRepository for MemoryUserRepository {
         Ok(store.devices.iter().find(|device| device.id == id).cloned())
     }
 
+    async fn list_devices(&self, user_id: UserId) -> Result<Vec<DeviceRecord>, RepoError> {
+        let store = self.inner.read().await;
+        let mut devices: Vec<_> = store
+            .devices
+            .iter()
+            .filter(|device| device.user_id == user_id)
+            .cloned()
+            .collect();
+        devices.sort_by_key(|device| device.created_at);
+        Ok(devices)
+    }
+
+    async fn rename_device(
+        &self,
+        user_id: UserId,
+        device_id: DeviceId,
+        name: &str,
+    ) -> Result<DeviceRecord, RepoError> {
+        let mut store = self.inner.write().await;
+        let Some(device) = store
+            .devices
+            .iter_mut()
+            .find(|device| device.id == device_id && device.user_id == user_id)
+        else {
+            return Err(RepoError::NotFound);
+        };
+        device.name = name.to_owned();
+        Ok(device.clone())
+    }
+
+    async fn revoke_device(
+        &self,
+        user_id: UserId,
+        device_id: DeviceId,
+        revoked_at: i64,
+    ) -> Result<(), RepoError> {
+        let mut store = self.inner.write().await;
+        let Some(device) = store
+            .devices
+            .iter_mut()
+            .find(|device| device.id == device_id && device.user_id == user_id)
+        else {
+            return Err(RepoError::NotFound);
+        };
+        device.revoked_at = Some(revoked_at);
+        Ok(())
+    }
+
     async fn count_active_devices(&self, user_id: UserId) -> Result<u32, RepoError> {
         let store = self.inner.read().await;
         let count = store

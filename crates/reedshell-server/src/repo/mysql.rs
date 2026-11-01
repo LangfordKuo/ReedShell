@@ -73,7 +73,7 @@ impl UserRepository for MySqlUserRepository {
                 status: UserStatus::Active,
                 created_at: user.created_at,
             }),
-            Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("1062") => {
+            Err(sqlx::Error::Database(error)) if error.is_unique_violation() => {
                 Err(RepoError::EmailExists)
             }
             Err(error) => Err(storage(error)),
@@ -153,6 +153,79 @@ impl UserRepository for MySqlUserRepository {
         .map_err(storage)?;
 
         row.as_ref().map(device_from_row).transpose()
+    }
+
+    async fn list_devices(&self, user_id: UserId) -> Result<Vec<DeviceRecord>, RepoError> {
+        let rows = sqlx::query(
+            "SELECT id, user_id, name, platform, os_version, app_version,
+                    public_key, created_at, revoked_at
+             FROM devices WHERE user_id = ? ORDER BY created_at ASC",
+        )
+        .bind(user_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage)?;
+
+        rows.iter().map(device_from_row).collect()
+    }
+
+    async fn rename_device(
+        &self,
+        user_id: UserId,
+        device_id: DeviceId,
+        name: &str,
+    ) -> Result<DeviceRecord, RepoError> {
+        let result = sqlx::query(
+            "UPDATE devices SET name = ?
+             WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
+        )
+        .bind(name)
+        .bind(device_id.to_string())
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(storage)?;
+
+        if result.rows_affected() != 1 {
+            return Err(RepoError::NotFound);
+        }
+
+        let row = sqlx::query(
+            "SELECT id, user_id, name, platform, os_version, app_version,
+                    public_key, created_at, revoked_at
+             FROM devices WHERE id = ? AND user_id = ?",
+        )
+        .bind(device_id.to_string())
+        .bind(user_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage)?;
+
+        let device = row.as_ref().map(device_from_row).transpose()?;
+        device.ok_or(RepoError::NotFound)
+    }
+
+    async fn revoke_device(
+        &self,
+        user_id: UserId,
+        device_id: DeviceId,
+        revoked_at: i64,
+    ) -> Result<(), RepoError> {
+        let result = sqlx::query(
+            "UPDATE devices SET revoked_at = ?
+             WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
+        )
+        .bind(timestamp(revoked_at)?)
+        .bind(device_id.to_string())
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(storage)?;
+
+        if result.rows_affected() != 1 {
+            return Err(RepoError::NotFound);
+        }
+        Ok(())
     }
 
     async fn count_active_devices(&self, user_id: UserId) -> Result<u32, RepoError> {

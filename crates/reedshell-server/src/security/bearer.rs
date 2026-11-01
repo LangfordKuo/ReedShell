@@ -1,4 +1,5 @@
 use axum::http::{HeaderMap, header::AUTHORIZATION};
+use reedshell_core::id::{DeviceId, UserId};
 
 use crate::{
     error::AppError,
@@ -20,6 +21,20 @@ pub fn require_access(headers: &HeaderMap, signer: &TokenSigner) -> Result<Claim
     signer
         .verify_access(token.trim())
         .map_err(|_| invalid_token())
+}
+
+/// Extract the authenticated user and the calling device.
+pub fn require_identity(
+    headers: &HeaderMap,
+    signer: &TokenSigner,
+) -> Result<(UserId, DeviceId), AppError> {
+    let claims = require_access(headers, signer)?;
+    let user_id = claims.sub.parse::<UserId>().map_err(|_| invalid_token())?;
+    let device_id = claims
+        .did
+        .parse::<DeviceId>()
+        .map_err(|_| invalid_token())?;
+    Ok((user_id, device_id))
 }
 
 fn invalid_token() -> AppError {

@@ -5,7 +5,10 @@ use reedshell_server::{
     AppState, Config,
     repo::{UserRepository, memory::MemoryUserRepository, mysql::MySqlUserRepository},
     routes,
-    security::token::TokenSigner,
+    security::{
+        rate_limit::{MemoryRateLimiter, RateLimiter, RedisRateLimiter},
+        token::TokenSigner,
+    },
 };
 use sqlx::mysql::MySqlPoolOptions;
 use tracing_subscriber::EnvFilter;
@@ -37,11 +40,31 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("DATABASE_URL is required; set REEDSHELL_ALLOW_MEMORY=1 for development");
     };
 
+    let limiter: Arc<dyn RateLimiter> = if let Some(redis_url) = &config.redis_url {
+        match RedisRateLimiter::connect(redis_url).await {
+            Ok(limiter) => {
+                tracing::info!("using Redis rate limiter");
+                Arc::new(limiter)
+            }
+            Err(error) if !config.environment.is_production() => {
+                tracing::warn!(%error, "Redis unavailable; using in-memory rate limiter");
+                Arc::new(MemoryRateLimiter::default())
+            }
+            Err(error) => return Err(error).context("failed to connect to Redis"),
+        }
+    } else if config.environment.is_production() {
+        anyhow::bail!("REDIS_URL is required in production");
+    } else {
+        tracing::warn!("REDIS_URL is not set; using in-memory rate limiter");
+        Arc::new(MemoryRateLimiter::default())
+    };
+
     let tokens = Arc::new(TokenSigner::from_seed(config.token_signing_key));
     let state = AppState {
         config: Arc::clone(&config),
         users,
         tokens,
+        limiter,
     };
 
     let app = routes::router(state);

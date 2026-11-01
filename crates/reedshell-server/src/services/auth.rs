@@ -1,3 +1,4 @@
+use axum::http::HeaderMap;
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD},
@@ -23,12 +24,21 @@ use crate::{
     security::{
         device::verify_device_signature,
         password,
+        rate_limit::RateLimiter,
         token::{Claims, TokenSigner},
     },
 };
 
 const WRAPPED_MK_LEN: usize = WRAPPED_MASTER_KEY_LEN;
 const MAX_REFRESH_SKEW_SECS: i64 = 300;
+const REGISTER_LIMIT: u32 = 3;
+const REGISTER_WINDOW_SECS: u64 = 3600;
+const LOGIN_ATTEMPT_LIMIT: u32 = 10;
+const LOGIN_ATTEMPT_WINDOW_SECS: u64 = 60;
+const LOGIN_FAILURE_LIMIT: u32 = 20;
+const LOGIN_FAILURE_WINDOW_SECS: u64 = 3600;
+const REFRESH_LIMIT: u32 = 60;
+const REFRESH_WINDOW_SECS: u64 = 60;
 
 /// Registration payload produced by a client after deriving its keys.
 #[derive(Debug, Deserialize)]
@@ -95,9 +105,17 @@ pub struct RefreshResponse {
 /// Create an account from client-derived key material.
 pub async fn register(
     repo: &dyn UserRepository,
+    limiter: &dyn RateLimiter,
     request: RegisterRequest,
 ) -> Result<RegisterResponse, AppError> {
     let email = normalize_email(&request.email)?;
+    enforce_limit(
+        limiter,
+        &format!("register:{email}"),
+        REGISTER_LIMIT,
+        REGISTER_WINDOW_SECS,
+    )
+    .await?;
     let auth_key = decode_fixed::<AUTH_KEY_LEN>(&request.auth_key, "auth_key")?;
     let kdf_salt = decode_fixed::<KDF_SALT_LEN>(&request.kdf_salt, "kdf_salt")?;
     if !request.kdf_params.is_valid() {
@@ -140,9 +158,30 @@ pub async fn register(
 pub async fn login(
     repo: &dyn UserRepository,
     tokens: &TokenSigner,
+    limiter: &dyn RateLimiter,
     request: LoginRequest,
 ) -> Result<LoginResponse, AppError> {
     let email = normalize_email(&request.email)?;
+    let failure_key = format!("login_fail:{email}");
+    let failure_state = limiter
+        .peek(&failure_key)
+        .await
+        .map_err(|_| rate_limiter_unavailable())?;
+    if failure_state.count >= LOGIN_FAILURE_LIMIT {
+        return Err(AppError::too_many_requests(
+            "account_locked",
+            "too many failed sign-in attempts; try again later",
+            failure_state.retry_after_secs,
+        ));
+    }
+    enforce_limit(
+        limiter,
+        &format!("login_attempt:{email}"),
+        LOGIN_ATTEMPT_LIMIT,
+        LOGIN_ATTEMPT_WINDOW_SECS,
+    )
+    .await?;
+
     let auth_key = decode_fixed::<AUTH_KEY_LEN>(&request.auth_key, "auth_key")?;
     let device = validate_device(request.device)?;
 
@@ -152,15 +191,22 @@ pub async fn login(
         .map_err(map_repo_error)?
     else {
         verify_dummy(&auth_key)?;
+        record_login_failure(limiter, &failure_key).await?;
         return Err(invalid_credentials());
     };
 
     if !password::verify_auth_key(&auth_key, &user.auth_salt, &user.auth_hash)? {
+        record_login_failure(limiter, &failure_key).await?;
         return Err(invalid_credentials());
     }
     if user.status != UserStatus::Active {
+        record_login_failure(limiter, &failure_key).await?;
         return Err(invalid_credentials());
     }
+    limiter
+        .reset(&failure_key)
+        .await
+        .map_err(|_| rate_limiter_unavailable())?;
 
     let device_limit = match user.plan {
         Plan::Pro => MAX_PRO_DEVICES,
@@ -224,12 +270,20 @@ pub async fn login(
 pub async fn refresh(
     repo: &dyn UserRepository,
     tokens: &TokenSigner,
+    limiter: &dyn RateLimiter,
     request: RefreshRequest,
 ) -> Result<RefreshResponse, AppError> {
     let device_id = request
         .device_id
         .parse::<DeviceId>()
         .map_err(|_| invalid_refresh_token())?;
+    enforce_limit(
+        limiter,
+        &format!("refresh:{device_id}"),
+        REFRESH_LIMIT,
+        REFRESH_WINDOW_SECS,
+    )
+    .await?;
     let token_hash = hash_refresh_token(request.refresh_token.trim());
     let now = now_secs();
 
@@ -314,6 +368,28 @@ pub async fn logout(repo: &dyn UserRepository, claims: &Claims) -> Result<(), Ap
     repo.revoke_device_tokens(device_id, now_secs())
         .await
         .map_err(map_repo_error)
+}
+
+/// Authenticate a protected request and reject revoked devices immediately.
+pub async fn authenticate(
+    repo: &dyn UserRepository,
+    tokens: &TokenSigner,
+    headers: &HeaderMap,
+) -> Result<(UserId, DeviceId), AppError> {
+    let (user_id, device_id) = crate::security::bearer::require_identity(headers, tokens)?;
+    let Some(device) = repo.find_device(device_id).await.map_err(map_repo_error)? else {
+        return Err(AppError::unauthorized(
+            "invalid_token",
+            "device is not registered",
+        ));
+    };
+    if device.user_id != user_id || device.revoked_at.is_some() {
+        return Err(AppError::unauthorized(
+            "device_revoked",
+            "device has been revoked",
+        ));
+    }
+    Ok((user_id, device_id))
 }
 
 /// The exact message a client signs when refreshing.
@@ -461,6 +537,38 @@ fn verify_dummy(auth_key: &[u8; 32]) -> Result<(), AppError> {
 
 fn invalid_credentials() -> AppError {
     AppError::unauthorized("invalid_credentials", "email or password is incorrect")
+}
+
+async fn enforce_limit(
+    limiter: &dyn RateLimiter,
+    key: &str,
+    limit: u32,
+    window_secs: u64,
+) -> Result<(), AppError> {
+    let decision = limiter
+        .hit(key, limit, window_secs)
+        .await
+        .map_err(|_| rate_limiter_unavailable())?;
+    if decision.allowed {
+        return Ok(());
+    }
+    Err(AppError::too_many_requests(
+        "rate_limited",
+        "too many requests; try again later",
+        decision.retry_after_secs,
+    ))
+}
+
+async fn record_login_failure(limiter: &dyn RateLimiter, key: &str) -> Result<(), AppError> {
+    limiter
+        .hit(key, LOGIN_FAILURE_LIMIT, LOGIN_FAILURE_WINDOW_SECS)
+        .await
+        .map_err(|_| rate_limiter_unavailable())?;
+    Ok(())
+}
+
+fn rate_limiter_unavailable() -> AppError {
+    AppError::internal(anyhow::anyhow!("rate limiter unavailable"))
 }
 
 fn map_repo_error(error: RepoError) -> AppError {

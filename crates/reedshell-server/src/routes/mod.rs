@@ -1,10 +1,11 @@
 pub mod auth;
+pub mod devices;
 pub mod health;
 
 use axum::{
     Router,
     http::HeaderName,
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use tower_http::{
     limit::RequestBodyLimitLayer,
@@ -25,6 +26,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/refresh", post(auth::refresh))
         .route("/v1/auth/logout", post(auth::logout))
+        .route("/v1/devices", get(devices::list))
+        .route(
+            "/v1/devices/{device_id}",
+            patch(devices::rename).delete(devices::revoke),
+        )
         .layer(SetRequestIdLayer::new(request_id.clone(), MakeRequestUuid))
         .layer(PropagateRequestIdLayer::new(request_id))
         .layer(TraceLayer::new_for_http())
