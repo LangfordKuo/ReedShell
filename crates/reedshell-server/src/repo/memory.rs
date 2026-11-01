@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use reedshell_core::id::UserId;
+use reedshell_core::id::{DeviceId, UserId};
 use reedshell_core::model::{Plan, UserStatus};
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
@@ -88,9 +88,15 @@ impl UserRepository for MemoryUserRepository {
             app_version: device.app_version,
             public_key: device.public_key,
             created_at: device.created_at,
+            revoked_at: None,
         };
         store.devices.push(record.clone());
         Ok(record)
+    }
+
+    async fn find_device(&self, id: DeviceId) -> Result<Option<DeviceRecord>, RepoError> {
+        let store = self.inner.read().await;
+        Ok(store.devices.iter().find(|device| device.id == id).cloned())
     }
 
     async fn count_active_devices(&self, user_id: UserId) -> Result<u32, RepoError> {
@@ -98,7 +104,7 @@ impl UserRepository for MemoryUserRepository {
         let count = store
             .devices
             .iter()
-            .filter(|device| device.user_id == user_id)
+            .filter(|device| device.user_id == user_id && device.revoked_at.is_none())
             .count();
         Ok(u32::try_from(count).unwrap_or(u32::MAX))
     }
@@ -110,6 +116,51 @@ impl UserRepository for MemoryUserRepository {
             .refresh_tokens
             .retain(|record| record.expires_at > now);
         store.refresh_tokens.push(token);
+        Ok(())
+    }
+
+    async fn find_refresh_token(
+        &self,
+        token_hash: &[u8; 32],
+    ) -> Result<Option<RefreshTokenRecord>, RepoError> {
+        let store = self.inner.read().await;
+        Ok(store
+            .refresh_tokens
+            .iter()
+            .find(|record| &record.token_hash == token_hash)
+            .cloned())
+    }
+
+    async fn rotate_refresh_token(
+        &self,
+        old_id: &str,
+        new_token: RefreshTokenRecord,
+        rotated_at: i64,
+    ) -> Result<(), RepoError> {
+        let mut store = self.inner.write().await;
+        let Some(old) = store
+            .refresh_tokens
+            .iter_mut()
+            .find(|record| record.id == old_id)
+        else {
+            return Err(RepoError::NotFound);
+        };
+        old.rotated_at = Some(rotated_at);
+        store.refresh_tokens.push(new_token);
+        Ok(())
+    }
+
+    async fn revoke_device_tokens(
+        &self,
+        device_id: DeviceId,
+        revoked_at: i64,
+    ) -> Result<(), RepoError> {
+        let mut store = self.inner.write().await;
+        for record in &mut store.refresh_tokens {
+            if record.device_id == device_id && record.revoked_at.is_none() {
+                record.revoked_at = Some(revoked_at);
+            }
+        }
         Ok(())
     }
 }
@@ -133,6 +184,19 @@ mod tests {
             wrapped_mk_by_rc: vec![6u8; 48],
             nonce_rc: [7u8; 24],
             created_at: 0,
+        }
+    }
+
+    fn new_token(user_id: UserId, device_id: DeviceId, byte: u8) -> RefreshTokenRecord {
+        RefreshTokenRecord {
+            id: format!("token-{byte}"),
+            user_id,
+            device_id,
+            token_hash: [byte; 32],
+            expires_at: i64::MAX,
+            created_at: 0,
+            rotated_at: None,
+            revoked_at: None,
         }
     }
 
@@ -178,5 +242,48 @@ mod tests {
                 .expect("find")
                 .is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn rotates_and_revokes_tokens() {
+        let repo = MemoryUserRepository::new();
+        let user = repo
+            .create_user(new_user("a@example.com"))
+            .await
+            .expect("create");
+        let device = DeviceId::new();
+        repo.store_refresh_token(new_token(user.id, device, 1))
+            .await
+            .expect("store");
+
+        let old = repo
+            .find_refresh_token(&[1u8; 32])
+            .await
+            .expect("find")
+            .expect("present");
+        repo.rotate_refresh_token(&old.id, new_token(user.id, device, 2), 10)
+            .await
+            .expect("rotate");
+
+        let old = repo
+            .find_refresh_token(&[1u8; 32])
+            .await
+            .expect("find")
+            .expect("present");
+        assert_eq!(old.rotated_at, Some(10));
+        assert!(
+            repo.find_refresh_token(&[2u8; 32])
+                .await
+                .expect("find")
+                .is_some()
+        );
+
+        repo.revoke_device_tokens(device, 20).await.expect("revoke");
+        let new = repo
+            .find_refresh_token(&[2u8; 32])
+            .await
+            .expect("find")
+            .expect("present");
+        assert_eq!(new.revoked_at, Some(20));
     }
 }

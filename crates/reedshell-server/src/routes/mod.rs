@@ -23,6 +23,8 @@ pub fn router(state: AppState) -> Router {
         .route("/readyz", get(health::readyz))
         .route("/v1/auth/register", post(auth::register))
         .route("/v1/auth/login", post(auth::login))
+        .route("/v1/auth/refresh", post(auth::refresh))
+        .route("/v1/auth/logout", post(auth::logout))
         .layer(SetRequestIdLayer::new(request_id.clone(), MakeRequestUuid))
         .layer(PropagateRequestIdLayer::new(request_id))
         .layer(TraceLayer::new_for_http())

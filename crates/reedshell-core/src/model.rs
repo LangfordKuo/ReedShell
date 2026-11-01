@@ -95,6 +95,19 @@ impl UserStatus {
     }
 }
 
+impl std::str::FromStr for UserStatus {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "active" => Ok(Self::Active),
+            "suspended" => Ok(Self::Suspended),
+            "pending_delete" => Ok(Self::PendingDelete),
+            _ => Err(()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

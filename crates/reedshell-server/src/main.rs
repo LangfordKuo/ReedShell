@@ -2,8 +2,12 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use reedshell_server::{
-    AppState, Config, repo::memory::MemoryUserRepository, routes, security::token::TokenSigner,
+    AppState, Config,
+    repo::{UserRepository, memory::MemoryUserRepository, mysql::MySqlUserRepository},
+    routes,
+    security::token::TokenSigner,
 };
+use sqlx::mysql::MySqlPoolOptions;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -13,14 +17,25 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env().context("invalid configuration")?;
     let config = Arc::new(config);
 
-    if !config.allow_memory_repository {
-        anyhow::bail!(
-            "no persistent user repository is configured; set REEDSHELL_ALLOW_MEMORY=1 for development"
-        );
-    }
-    tracing::warn!("using in-memory user repository; all data is lost on restart");
+    let users: Arc<dyn UserRepository> = if let Some(database_url) = &config.database_url {
+        let pool = MySqlPoolOptions::new()
+            .max_connections(10)
+            .connect(database_url)
+            .await
+            .context("failed to connect to MySQL")?;
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .context("failed to run database migrations")?;
+        tracing::info!("using MySQL user repository");
+        Arc::new(MySqlUserRepository::new(pool))
+    } else if config.allow_memory_repository {
+        tracing::warn!("using in-memory user repository; all data is lost on restart");
+        Arc::new(MemoryUserRepository::default())
+    } else {
+        anyhow::bail!("DATABASE_URL is required; set REEDSHELL_ALLOW_MEMORY=1 for development");
+    };
 
-    let users = Arc::new(MemoryUserRepository::default());
     let tokens = Arc::new(TokenSigner::from_seed(config.token_signing_key));
     let state = AppState {
         config: Arc::clone(&config),

@@ -20,10 +20,15 @@ use ulid::Ulid;
 use crate::{
     error::AppError,
     repo::{NewDevice, NewUser, RefreshTokenRecord, RepoError, UserRepository},
-    security::{password, token::TokenSigner},
+    security::{
+        device::verify_device_signature,
+        password,
+        token::{Claims, TokenSigner},
+    },
 };
 
 const WRAPPED_MK_LEN: usize = WRAPPED_MASTER_KEY_LEN;
+const MAX_REFRESH_SKEW_SECS: i64 = 300;
 
 /// Registration payload produced by a client after deriving its keys.
 #[derive(Debug, Deserialize)]
@@ -65,6 +70,22 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     pub user_id: String,
     pub device_id: String,
+    pub access_token: String,
+    pub expires_in: i64,
+    pub refresh_token: String,
+    pub refresh_expires_in: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RefreshRequest {
+    pub device_id: String,
+    pub refresh_token: String,
+    pub timestamp: i64,
+    pub signature: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RefreshResponse {
     pub access_token: String,
     pub expires_in: i64,
     pub refresh_token: String,
@@ -182,6 +203,9 @@ pub async fn login(
         device_id,
         token_hash: refresh_hash,
         expires_at: now.saturating_add(REFRESH_TOKEN_TTL_SECS),
+        created_at: now,
+        rotated_at: None,
+        revoked_at: None,
     })
     .await
     .map_err(map_repo_error)?;
@@ -194,6 +218,108 @@ pub async fn login(
         refresh_token,
         refresh_expires_in: REFRESH_TOKEN_TTL_SECS,
     })
+}
+
+/// Rotate a refresh token and issue a new access token.
+pub async fn refresh(
+    repo: &dyn UserRepository,
+    tokens: &TokenSigner,
+    request: RefreshRequest,
+) -> Result<RefreshResponse, AppError> {
+    let device_id = request
+        .device_id
+        .parse::<DeviceId>()
+        .map_err(|_| invalid_refresh_token())?;
+    let token_hash = hash_refresh_token(request.refresh_token.trim());
+    let now = now_secs();
+
+    let Some(record) = repo
+        .find_refresh_token(&token_hash)
+        .await
+        .map_err(map_repo_error)?
+    else {
+        return Err(invalid_refresh_token());
+    };
+
+    // A token that was already rotated being presented again means it leaked.
+    if record.rotated_at.is_some() {
+        repo.revoke_device_tokens(record.device_id, now)
+            .await
+            .map_err(map_repo_error)?;
+        return Err(AppError::unauthorized(
+            "refresh_token_reused",
+            "refresh token reuse detected; device sessions revoked",
+        ));
+    }
+
+    if record.revoked_at.is_some() || record.expires_at <= now {
+        return Err(invalid_refresh_token());
+    }
+    if record.device_id != device_id {
+        return Err(invalid_refresh_token());
+    }
+
+    let Some(device) = repo.find_device(device_id).await.map_err(map_repo_error)? else {
+        return Err(invalid_refresh_token());
+    };
+    if device.revoked_at.is_some() || device.user_id != record.user_id {
+        return Err(invalid_refresh_token());
+    }
+
+    if (now - request.timestamp).abs() > MAX_REFRESH_SKEW_SECS {
+        return Err(AppError::unauthorized(
+            "stale_request",
+            "request timestamp is outside the allowed window",
+        ));
+    }
+    let message = refresh_signature_message(&request.device_id, request.timestamp);
+    verify_device_signature(&device.public_key, message.as_bytes(), &request.signature)?;
+
+    let access_token = tokens
+        .issue_access(device.user_id, device_id, ACCESS_TOKEN_TTL_SECS)
+        .map_err(|error| AppError::internal(anyhow::anyhow!("token issuance failed: {error}")))?;
+    let (refresh_token, refresh_hash) = random_refresh_token()?;
+
+    repo.rotate_refresh_token(
+        &record.id,
+        RefreshTokenRecord {
+            id: Ulid::new().to_string(),
+            user_id: device.user_id,
+            device_id,
+            token_hash: refresh_hash,
+            expires_at: now.saturating_add(REFRESH_TOKEN_TTL_SECS),
+            created_at: now,
+            rotated_at: None,
+            revoked_at: None,
+        },
+        now,
+    )
+    .await
+    .map_err(map_repo_error)?;
+
+    Ok(RefreshResponse {
+        access_token,
+        expires_in: ACCESS_TOKEN_TTL_SECS,
+        refresh_token,
+        refresh_expires_in: REFRESH_TOKEN_TTL_SECS,
+    })
+}
+
+/// Revoke every refresh token belonging to the calling device.
+pub async fn logout(repo: &dyn UserRepository, claims: &Claims) -> Result<(), AppError> {
+    let device_id = claims
+        .did
+        .parse::<DeviceId>()
+        .map_err(|_| AppError::unauthorized("invalid_token", "access token is invalid"))?;
+    repo.revoke_device_tokens(device_id, now_secs())
+        .await
+        .map_err(map_repo_error)
+}
+
+/// The exact message a client signs when refreshing.
+#[must_use]
+pub fn refresh_signature_message(device_id: &str, timestamp: i64) -> String {
+    format!("refresh|{device_id}|{timestamp}")
 }
 
 struct ValidatedDevice {
@@ -308,10 +434,22 @@ fn random_refresh_token() -> Result<(String, [u8; 32]), AppError> {
     getrandom::fill(&mut bytes)
         .map_err(|error| AppError::internal(anyhow::anyhow!("random source: {error}")))?;
     let raw = URL_SAFE_NO_PAD.encode(bytes);
+    let hash = hash_refresh_token(&raw);
+    Ok((raw, hash))
+}
+
+fn hash_refresh_token(raw: &str) -> [u8; 32] {
     let digest = Sha256::digest(raw.as_bytes());
     let mut hash = [0u8; 32];
     hash.copy_from_slice(&digest);
-    Ok((raw, hash))
+    hash
+}
+
+fn invalid_refresh_token() -> AppError {
+    AppError::unauthorized(
+        "invalid_refresh_token",
+        "refresh token is invalid or expired",
+    )
 }
 
 fn verify_dummy(auth_key: &[u8; 32]) -> Result<(), AppError> {

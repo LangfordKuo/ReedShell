@@ -1,11 +1,12 @@
 use async_trait::async_trait;
-use reedshell_core::kdf::KdfParams;
 use reedshell_core::{
     id::{DeviceId, UserId},
+    kdf::KdfParams,
     model::{DevicePlatform, Plan, UserStatus},
 };
 
 pub mod memory;
+pub mod mysql;
 
 /// An account as stored by the server.
 #[derive(Clone, Debug)]
@@ -52,6 +53,7 @@ pub struct DeviceRecord {
     pub app_version: Option<String>,
     pub public_key: [u8; 32],
     pub created_at: i64,
+    pub revoked_at: Option<i64>,
 }
 
 /// Fields required to enroll a device.
@@ -75,6 +77,9 @@ pub struct RefreshTokenRecord {
     pub device_id: DeviceId,
     pub token_hash: [u8; 32],
     pub expires_at: i64,
+    pub created_at: i64,
+    pub rotated_at: Option<i64>,
+    pub revoked_at: Option<i64>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -94,6 +99,22 @@ pub trait UserRepository: Send + Sync {
     async fn find_user_by_email(&self, email: &str) -> Result<Option<UserRecord>, RepoError>;
     async fn find_user_by_id(&self, id: UserId) -> Result<Option<UserRecord>, RepoError>;
     async fn create_device(&self, device: NewDevice) -> Result<DeviceRecord, RepoError>;
+    async fn find_device(&self, id: DeviceId) -> Result<Option<DeviceRecord>, RepoError>;
     async fn count_active_devices(&self, user_id: UserId) -> Result<u32, RepoError>;
     async fn store_refresh_token(&self, token: RefreshTokenRecord) -> Result<(), RepoError>;
+    async fn find_refresh_token(
+        &self,
+        token_hash: &[u8; 32],
+    ) -> Result<Option<RefreshTokenRecord>, RepoError>;
+    async fn rotate_refresh_token(
+        &self,
+        old_id: &str,
+        new_token: RefreshTokenRecord,
+        rotated_at: i64,
+    ) -> Result<(), RepoError>;
+    async fn revoke_device_tokens(
+        &self,
+        device_id: DeviceId,
+        revoked_at: i64,
+    ) -> Result<(), RepoError>;
 }
