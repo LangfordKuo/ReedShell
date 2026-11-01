@@ -6,6 +6,7 @@ CREATE TABLE users (
     email               VARCHAR(255) NOT NULL,
     email_verified_at   DATETIME(3) NULL,
     auth_hash           VARBINARY(64) NOT NULL,
+    auth_salt           VARBINARY(16) NOT NULL,
     kdf_salt            VARBINARY(16) NOT NULL,
     kdf_params          JSON NOT NULL,
     kdf_version         SMALLINT NOT NULL DEFAULT 1,

@@ -37,14 +37,15 @@ impl UserRepository for MySqlUserRepository {
 
         let result = sqlx::query(
             "INSERT INTO users (
-                id, email, auth_hash, kdf_salt, kdf_params, kdf_version,
+                id, email, auth_hash, auth_salt, kdf_salt, kdf_params, kdf_version,
                 wrapped_mk_by_pw, nonce_pw, wrapped_mk_by_rc, nonce_rc,
                 plan, status, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'free', 'active', ?, ?)",
+             ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 'free', 'active', ?, ?)",
         )
         .bind(user.id.to_string())
         .bind(&user.email)
         .bind(user.auth_hash.as_slice())
+        .bind(user.auth_salt.as_slice())
         .bind(user.kdf_salt.as_slice())
         .bind(params)
         .bind(user.wrapped_mk_by_pw.as_slice())

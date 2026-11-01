@@ -1316,6 +1316,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64",
+ "dotenvy",
  "ed25519-dalek",
  "getrandom 0.3.4",
  "reedshell-core",

@@ -12,6 +12,7 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let _ = dotenvy::dotenv();
     init_tracing();
 
     let config = Config::from_env().context("invalid configuration")?;
