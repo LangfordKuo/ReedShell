@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "created_at": "2026-11-01T06:24:34Z",
+  "updated_at": "2026-11-01T06:30:43Z",
+  "files": {
+    ".gitattributes": {
+      "role": "index",
+      "sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476",
+      "size": 291,
+      "normalized_sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476"
+    },
+    ".gitignore": {
+      "role": "index",
+      "sha256": "2b5e9666f0f0e4bab2b7d603f5eedc85684ebf90a9e08ed0ae2cbc27a9ed5619",
+      "size": 8,
+      "normalized_sha256": "2b5e9666f0f0e4bab2b7d603f5eedc85684ebf90a9e08ed0ae2cbc27a9ed5619"
+    },
+    ".zcode/config.json": {
+      "role": "index",
+      "sha256": "5f02be6d771ae5c5cfa0f44dbc114f1ab8c5d9e6681e4be87ebf7856af2254d8",
+      "size": 296,
+      "normalized_sha256": "5f02be6d771ae5c5cfa0f44dbc114f1ab8c5d9e6681e4be87ebf7856af2254d8"
+    },
+    "AGENTS.md": {
+      "role": "index",
+      "sha256": "ddb50101a5be7eb54bde0bdccb2ce15fbac13a0efed1b2851adc248c7a39bcb7",
+      "size": 13258,
+      "normalized_sha256": "ddb50101a5be7eb54bde0bdccb2ce15fbac13a0efed1b2851adc248c7a39bcb7"
+    },
+    "LICENSE": {
+      "role": "index",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
+      "size": 34523,
+      "normalized_sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+    },
+    "LICENSING.md": {
+      "role": "index",
+      "sha256": "b83baa8717363a4fb496cb035edb5cc2940b13192df48ad828028f5440fde5b3",
+      "size": 1907,
+      "normalized_sha256": "b83baa8717363a4fb496cb035edb5cc2940b13192df48ad828028f5440fde5b3"
+    },
+    "README.md": {
+      "role": "index",
+      "sha256": "b31408a59d1f4b196b698415a7a780480bb97f64f3fc484a6e3e56bcb93975a9",
+      "size": 1254,
+      "normalized_sha256": "d0d9f68d54f6b5d5f6d5c6baf7df5d8da5fd2fdedded4312f5e8c4a2821ee1bc"
+    },
+    "aoci.code.txt": {
+      "role": "index",
+      "sha256": "0cc2c689450f368a15979ae1c47d27e6588c3512163a4e6c53e160b15d493fb6",
+      "size": 4391,
+      "normalized_sha256": "0cc2c689450f368a15979ae1c47d27e6588c3512163a4e6c53e160b15d493fb6"
+    },
+    "aoci.meta.txt": {
+      "role": "index",
+      "sha256": "fbc304fa05182547e96f1f8404c7c30ad6c366bba9589523f1019c2c1da0427c",
+      "size": 1989,
+      "normalized_sha256": "fbc304fa05182547e96f1f8404c7c30ad6c366bba9589523f1019c2c1da0427c"
+    },
+    "aoci.txt": {
+      "role": "index",
+      "sha256": "36e33f00285e969630a6c6ecd357f2518ceea22efe36a771418e19bc6d120eb3",
+      "size": 298,
+      "normalized_sha256": "36e33f00285e969630a6c6ecd357f2518ceea22efe36a771418e19bc6d120eb3"
+    },
+    "docs/01-产品规格.md": {
+      "role": "index",
+      "sha256": "384de966074393444730318e9b6566d72612f9a9e4aee65e0dc8512d916a2b94",
+      "size": 17868,
+      "normalized_sha256": "384de966074393444730318e9b6566d72612f9a9e4aee65e0dc8512d916a2b94"
+    },
+    "docs/02-架构设计.md": {
+      "role": "index",
+      "sha256": "a912ade4c82f6ce0bdd136bf943438628e5d3e1df3cd08932dfc5d2e99a51378",
+      "size": 26371,
+      "normalized_sha256": "a912ade4c82f6ce0bdd136bf943438628e5d3e1df3cd08932dfc5d2e99a51378"
+    },
+    "docs/03-安全与同步协议.md": {
+      "role": "index",
+      "sha256": "ffac0f78fd3d2070870bbbad61cbd0a79c5b1661f27ea75f15a1378c46fb6af2",
+      "size": 37108,
+      "normalized_sha256": "ffac0f78fd3d2070870bbbad61cbd0a79c5b1661f27ea75f15a1378c46fb6af2"
+    },
+    "docs/04-交互与UI规范.md": {
+      "role": "index",
+      "sha256": "687704ad8e1b6d34d699da984b3d61e457deb8266e17668a48619f4a5ec7a4a8",
+      "size": 17608,
+      "normalized_sha256": "687704ad8e1b6d34d699da984b3d61e457deb8266e17668a48619f4a5ec7a4a8"
+    },
+    "docs/05-研发计划.md": {
+      "role": "index",
+      "sha256": "3980cd94ea38d6bffc4724fe183fd83f8ca5602f874c5a4b3231f99986a3d574",
+      "size": 11690,
+      "normalized_sha256": "3980cd94ea38d6bffc4724fe183fd83f8ca5602f874c5a4b3231f99986a3d574"
+    },
+    "docs/README.md": {
+      "role": "index",
+      "sha256": "b03fd721f0aec575a8b21467a564baf4a90fe0543927f5fdcc0415f45851c763",
+      "size": 1734,
+      "normalized_sha256": "b03fd721f0aec575a8b21467a564baf4a90fe0543927f5fdcc0415f45851c763"
+    }
+  },
+  "managed_scope": {
+    "version": "managed-scope-baseline/v1",
+    "policy_identity": "3b029307ca9a998f7863146b9aae29089dbd7d695d8e543a5334a9ba32f41394",
+    "observe_change_policy": "review_required",
+    "budget_policy_identity": "15e9b37a6c57e9bf03c9df3d0d049eb5b9a7f5540f9d34960408114e2538a32d",
+    "budget_policy": {
+      "version": "cognition-budget-policy/v1",
+      "mode": "enforce",
+      "whole_index": {
+        "target_tokens": 200000,
+        "warning_tokens": 300000,
+        "max_tokens": 400000
+      },
+      "r": [
+        {
+          "min_c": 1,
+          "max_c": 4,
+          "target_tokens": 25,
+          "max_tokens": 50
+        },
+        {
+          "min_c": 5,
+          "max_c": 7,
+          "target_tokens": 45,
+          "max_tokens": 90
+        },
+        {
+          "min_c": 8,
+          "max_c": 8,
+          "target_tokens": 70,
+          "max_tokens": 140
+        },
+        {
+          "min_c": 9,
+          "max_c": 9,
+          "target_tokens": 90,
+          "max_tokens": 180
+        }
+      ],
+      "s": [
+        {
+          "min_c": 1,
+          "max_c": 4,
+          "target_tokens": 20,
+          "max_tokens": 40
+        },
+        {
+          "min_c": 5,
+          "max_c": 7,
+          "target_tokens": 40,
+          "max_tokens": 80
+        },
+        {
+          "min_c": 8,
+          "max_c": 8,
+          "target_tokens": 70,
+          "max_tokens": 140
+        },
+        {
+          "min_c": 9,
+          "max_c": 9,
+          "target_tokens": 100,
+          "max_tokens": 200
+        }
+      ]
+    },
+    "apply_authorization_mode": "auto"
+  }
+}

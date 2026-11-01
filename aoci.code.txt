@@ -1,0 +1,17 @@
+#AOCI-CODE-VOLUME: 1
+
+===C:/Users/Administrator/Documents/Project/ReedShell/===
+.gitattributes[FV6T]: F:强制全仓库以 LF 检出，保证跨平台字节一致，避免自动换行改写导致 AOCI 基线整体失效 | R:- | A:统一 LF 检出；覆盖 autocrlf；二进制自动识别 | S:必须保持 eol=lf：AOCI 以原始字节建立基线，CRLF 检出会把整树标记为 stale
+AGENTS.md[SG6S]: F:向宿主 Agent 说明 AOCI 认知层的使用入口、读写边界与收尾维护规则 | R:- | A:AOCI 使用入口；建立与恢复认知；维护收尾；专项流程边界 | S:aoci_maintain 不替代索引建立流程；缺少完整索引时必须先按 Guide 建立
+LICENSE[SG8L]: F:AGPL-3.0 完整许可证文本，规定开源使用、修改、分发与网络服务义务 | R:- | A:开源使用条款；分发义务；网络服务条款；免责 | S:AGPL 第 13 条：作为网络服务提供修改版时必须向使用者提供对应源码；闭源分发须另获商业许可
+LICENSING.md[SG7T]: F:解释 AGPL-3.0 与商业双许可的适用范围、CLA 要求与商业授权联系方式 | R:code:LICENSE, code:README.md | A:开源许可说明；商业许可范围；CLA；官方服务承诺 | S:外部 PR 必须签署 CLA 才能合并，否则项目所有者将失去商业许可再授权能力
+README.md[SG7T]: F:项目入口，概述技术栈、当前阶段、规范文档索引与许可证模式 | R:code:docs/README.md, code:LICENSING.md | A:技术栈概览；文档索引；当前阶段；许可证入口 | S:当前处于 M0 规范阶段，仓库尚无实现代码，文档是唯一交付物
+.gitignore[FV6T]: F:排除本机工具配置，防止 .zcode 等本地文件进入版本库 | R:- | A:忽略 .zcode/ 目录 | S:当前仅忽略 .zcode/；新增本机工具目录时必须同步追加规则，否则会被 AOCI 扫描并再次误提交
+
+===C:/Users/Administrator/Documents/Project/ReedShell/docs/===
+01-产品规格.md[SB9M]: F:定义产品定位、免费与 Pro 边界、功能清单、平台矩阵、验收标准与待决决策 | R:code:docs/03-安全与同步协议.md, code:docs/04-交互与UI规范.md, code:docs/05-研发计划.md | A:功能清单 13 类；平台矩阵；验收标准；D1–D9 决策 | S:D8/D9 已确认密码包裹 MK 与 Web 密码登录并接受残余风险；变更需升级协议版本并评估已发布客户端
+02-架构设计.md[SG9L]: F:定义系统架构、技术选型、workspace 划分、客户端与服务端设计及关键流程 | R:code:docs/01-产品规格.md, code:docs/03-安全与同步协议.md | A:总体架构；技术选型；依赖方向；终端渲染管线；服务端模块；关键流程 | S:iced-fluent-theme 仅 0.1.x，只允许 apps/desktop 直接依赖，升级需视觉回归与 3 天 spike
+03-安全与同步协议.md[SS9L]: F:定义威胁模型、密钥层级、E2EE 记录格式、同步协议、数据表与安全加固清单 | R:code:docs/02-架构设计.md, code:docs/01-产品规格.md | A:威胁模型；密钥体系；E2EE 格式；同步协议；数据表；易支付接入 | S:服务端严禁实现解密路径；CI 必须阻止 reedshell-server 依赖 chacha20poly1305 或 reedshell-crypto 解密 feature
+04-交互与UI规范.md[SU8M]: F:定义桌面、移动与 Web 布局、Fluent 设计令牌、快捷键、终端交互与错误文案 | R:code:docs/01-产品规格.md, code:docs/02-架构设计.md | A:三端布局；设计令牌；快捷键；终端交互；错误文案；i18n | S:终端内 Ctrl+C 必须发送 SIGINT，应用不得拦截，快捷键重绑定不得覆盖该行为
+05-研发计划.md[SW7M]: F:定义 M0–M7 里程碑、工程规范、测试策略、CI/CD、风险登记册与完成定义 | R:code:docs/01-产品规格.md, code:docs/02-架构设计.md, code:docs/03-安全与同步协议.md | A:里程碑；工程规范；测试策略；CI/CD；风险登记册；DoD | S:数据库迁移必须向后兼容一个版本，先加列或表后删，否则回滚会破坏上一版本服务端
+README.md[SG6T]: F:规范文档索引，给出阅读顺序与 D1–D9 决策状态 | R:code:docs/01-产品规格.md, code:docs/02-架构设计.md, code:docs/03-安全与同步协议.md, code:docs/04-交互与UI规范.md, code:docs/05-研发计划.md | A:文档清单；阅读顺序；决策状态 | S:所有文档评审通过后升级为 v1.0 并冻结，后续修改走变更记录
